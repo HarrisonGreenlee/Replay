@@ -7,7 +7,7 @@ Built with CUDA 12.8 and Python 3.12.9, Replay is intended for researchers, epid
 
 Understanding how diseases spread through dynamic human contact networks is essential for effective public health planning. Most traditional epidemic models assume simplified or static interaction patterns, which often don’t reflect the complexity of real-world contact behavior.
 
-With growing access to mobility and proximity data, there’s a clear opportunity to build more accurate, data-driven models. However, working with time-resolved contact data—especially across large populations—can quickly become computationally expensive.
+With growing access to mobility and proximity data, there’s a clear opportunity to build more accurate, data-driven models. However, working with time-resolved contact data can quickly become computationally expensive.
 
 # What Replay Does
 
@@ -15,10 +15,9 @@ Replay addresses this by:
 
     Converting timestamped contact data into duration-weighted contact graphs
 
-    Leveraging sparse matrix operations to compute exposure at the individual level
+    Using sparse matrix operations to compute exposure at the individual level
 
-    Running massive numbers of stochastic simulations in parallel on commodity GPUs
-
+    Running massive numbers of stochastic simulations in parallel via CUSPARSE
 Rather than approximating, Replay “replays” the actual contact patterns recorded in empirical datasets. This allows for realistic simulation of outbreaks, including localized spread and superspreader events, without hardcoded behavioral assumptions.
 
 # Performance
