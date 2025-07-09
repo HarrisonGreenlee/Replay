@@ -1,0 +1,9 @@
+{
+  "name": "gpu-cpu-sim",
+  "version": "0.1.0",
+  "description": "Temporal simulation with CUDA and libxml2",
+  "builtin-baseline": "f33cc491c85a7d643c5ab6da1667c1458e6d7abf",
+  "dependencies": [
+    "libxml2"
+  ]
+}

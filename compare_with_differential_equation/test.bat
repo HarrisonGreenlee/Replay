@@ -1,0 +1,13 @@
+compute-sanitizer ..\benchmark\gpu_cpu_temporal_sim.exe synthetic_temporal_graph.txt ^
+  --N 1000 ^
+  --M 1000 ^
+  --step-size 86400.0 ^
+  --iterations 36 ^
+  --initial-infected 0.1 ^
+  --infect-prob 0.3 ^
+  --upper-range 8467200 ^
+  --medium-range 8035200 ^
+  --lower-range 7776000 ^
+  --start-time 946684800 ^
+  --time-step 86400 ^
+  --summary-out out.csv
