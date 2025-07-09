@@ -1,0 +1,35 @@
+# === Personal Build and installation folders ===
+tool/build/
+tool/external/
+tool/vcpkg_installed/
+
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+build.ninja
+.ninja_deps
+.ninja_log
+
+# === Ignore build scripts ===
+tool/build.bat
+tool/test.bat
+generate_networks/run.bat
+
+# === Python cache ===
+__pycache__/
+**/__pycache__/
+
+# === Compiled object and debug files ===
+*.obj
+*.ilk
+*.pdb
+
+# === Backup or temp files ===
+*~
+*.swp
+*.bak
+*.tmp
+
+# === Other junk ===
+.vscode
