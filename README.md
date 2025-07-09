@@ -81,7 +81,7 @@ Make sure the following are installed and available in your system `PATH`:
     cmake --build .
     ```
 
-    The executable will be generated in the tool/build directory as replay.exe.
+    The executable will be generated in the `tool/build` directory as `replay.exe`.
 
 ---
 
