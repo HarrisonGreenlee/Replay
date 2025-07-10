@@ -86,7 +86,7 @@ def main():
         print(f"[ERROR] Invalid datetime format: {start_str}. Use YYYY-MM-DD and HH:MM:SS.")
         return
 
-    sim_binary = "gpu_cpu_temporal_sim.exe" if os.name == 'nt' else "./gpu_cpu_temporal_sim"
+    sim_binary = "replay.exe" if os.name == 'nt' else "./replay"
     cmd = [sim_binary, args.temporal_contact_file]
 
     if args.use_cpu:
