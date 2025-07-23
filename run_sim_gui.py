@@ -55,7 +55,7 @@ def main():
     sim_group.add_argument("--initial-infected", type=float, default=0.5,
                            help="Initial infection probability [0–1]")
     sim_group.add_argument("--infect-prob", type=float, default=0.99,
-                           help="Infection probability when exposed for a full time step [0–1]")
+                           help="Infection probability when exposed for 1 hour (3600 seconds)")
     # sim_group.add_argument("--upper-range", type=int, default=7200,
     #                        help="Incubation phase threshold (seconds)")
     # sim_group.add_argument("--medium-range", type=int, default=3600,
