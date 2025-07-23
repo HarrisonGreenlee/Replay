@@ -30,10 +30,10 @@ set(SOURCES
 add_executable(replay ${SOURCES})
 
 # Add macro to disable Python.h in intervaldb
-target_compile_definitions(gpu_cpu_temporal_sim PRIVATE BUILD_C_LIBRARY)
+target_compile_definitions(replay PRIVATE BUILD_C_LIBRARY)
 
 # Link dependencies
-target_link_libraries(gpu_cpu_temporal_sim
+target_link_libraries(replay
     PRIVATE
         ${LibXml2_LIBRARIES}
         OpenMP::OpenMP_CXX
@@ -45,5 +45,5 @@ target_link_libraries(gpu_cpu_temporal_sim
 
 # MSVC-specific settings
 if (MSVC)
-    target_link_options(gpu_cpu_temporal_sim PRIVATE /DEBUG /NODEFAULTLIB:libcmtd.lib)
+    target_link_options(replay PRIVATE /DEBUG /NODEFAULTLIB:libcmtd.lib)
 endif()
