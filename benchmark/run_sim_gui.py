@@ -14,19 +14,6 @@ if sys.platform == "win32":
         pass
 
 
-def extract_population_size(path):
-    try:
-        with open(path, 'r') as f:
-            first_line = f.readline()
-        if not first_line.startswith("EDGE_LIST"):
-            raise ValueError("Not a valid temporal contact file.")
-        tokens = first_line.strip().split()
-        return len(tokens) - 1
-    except Exception as e:
-        print(f"[ERROR] Failed to read population size: {e}")
-        return None
-
-
 @Gooey(
     program_name="Replay!",
     default_size=(1200, 1400),
@@ -34,8 +21,8 @@ def extract_population_size(path):
     show_success_modal=False,
     show_stop_warning=True,
     tabbed_groups=True,
-    terminal_font_color='white',
-    terminal_background_color='black',
+    terminal_font_color='black',
+    terminal_background_color='white',
     requires_shell=False,
     clear_before_run=True
 )
@@ -68,13 +55,20 @@ def main():
     sim_group.add_argument("--initial-infected", type=float, default=0.5,
                            help="Initial infection probability [0–1]")
     sim_group.add_argument("--infect-prob", type=float, default=0.99,
-                           help="Infection probability when exposed for a full time step [0–1]")
-    sim_group.add_argument("--upper-range", type=int, default=7200,
-                           help="Incubation phase threshold (seconds)")
-    sim_group.add_argument("--medium-range", type=int, default=3600,
-                           help="Infectious phase threshold (seconds)")
-    sim_group.add_argument("--lower-range", type=int, default=0,
-                           help="Resistant phase threshold (seconds)")
+                           help="Infection probability when exposed for 1 hour (3600 seconds)")
+    # sim_group.add_argument("--upper-range", type=int, default=7200,
+    #                        help="Incubation phase threshold (seconds)")
+    # sim_group.add_argument("--medium-range", type=int, default=3600,
+    #                        help="Infectious phase threshold (seconds)")
+    # sim_group.add_argument("--lower-range", type=int, default=0,
+    #                        help="Resistant phase threshold (seconds)")
+    sim_group.add_argument("--exposed-duration", type=int, default=86400,
+                       help="Duration before an infected person becomes infectious (in seconds)")
+    sim_group.add_argument("--infectious-duration", type=int, default=432000,
+                       help="Duration a person remains infectious (in seconds)")
+    sim_group.add_argument("--resistant-duration", type=int, default=864000,
+                       help="Duration a recovered person remains resistant (in seconds)")
+
 
     sim_group.add_argument("--start-date", widget="DateChooser",
                            default="2000-01-01", help="Simulation start date (UTC)")
@@ -92,12 +86,7 @@ def main():
         print(f"[ERROR] Invalid datetime format: {start_str}. Use YYYY-MM-DD and HH:MM:SS.")
         return
 
-    population_size = extract_population_size(args.temporal_contact_file)
-    if not population_size:
-        print("[ERROR] Could not determine population size from temporal contact file.")
-        return
-
-    sim_binary = "gpu_cpu_temporal_sim.exe" if os.name == 'nt' else "./gpu_cpu_temporal_sim"
+    sim_binary = "replay.exe" if os.name == 'nt' else "./replay"
     cmd = [sim_binary, args.temporal_contact_file]
 
     if args.use_cpu:
@@ -105,15 +94,14 @@ def main():
         cmd += ["--cpu-threads", str(args.cpu_threads)]
 
     cmd += [
-        "--N", str(population_size),
         "--M", str(args.M),
         "--step-size", str(args.step_size),
         "--iterations", str(args.iterations),
         "--initial-infected", str(args.initial_infected),
         "--infect-prob", str(args.infect_prob),
-        "--upper-range", str(args.upper_range),
-        "--medium-range", str(args.medium_range),
-        "--lower-range", str(args.lower_range),
+        "--exposed-duration", str(args.exposed_duration),
+        "--infectious-duration", str(args.infectious_duration),
+        "--resistant-duration", str(args.resistant_duration),
         "--start-time", str(start_ts),
         "--time-step", str(args.time_step),
     ]
