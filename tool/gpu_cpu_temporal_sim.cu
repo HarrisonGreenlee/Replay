@@ -232,6 +232,20 @@ static void build_csr_from_intervals(IntervalMap *hits, int n_hits, int n_nodes,
                                      int **csrRowPtr, int **csrColInd,
                                      float **csrVal, size_t *p_nnz,
                                      int64_t start_ts, int64_t end_ts) {
+
+  // --- Early exit if no intervals (avoid malloc(0) / invalid deref) ---
+  if (n_hits <= 0) {
+    *p_nnz = 0;
+    *csrRowPtr = (int *)calloc((size_t)(n_nodes + 1), sizeof(int));
+    *csrColInd = NULL;
+    *csrVal = NULL;
+    if (!*csrRowPtr) {
+      fprintf(stderr, "Out of memory allocating empty CSR row pointer.\n");
+      exit(1);
+    }
+    return;
+  }
+
   typedef struct {
     int row;
     int col;
@@ -284,7 +298,7 @@ static void build_csr_from_intervals(IntervalMap *hits, int n_hits, int n_nodes,
       edgelist[agg] = edgelist[i];
     }
   }
-  ecount = agg + 1;
+  ecount = (ecount > 0) ? (agg + 1) : 0;
 
   *p_nnz = (size_t)ecount;
   *csrRowPtr = (int *)malloc((size_t)(n_nodes + 1) * sizeof(int));
