@@ -47,7 +47,7 @@ static float gInitialInfectedProb; // Probability an individual starts infected
 static float gSusceptibleInfectProb; // chance to get infected if exposed
 
 static int64_t gGlobalStartTime = 946713600; // Jan 1, 2000
-static int64_t gTimeStep = 3600;             // 1 hour
+static int64_t gStaticNetworkDuration = 3600;// 1 hour
 
 // Simple CUDA check macro
 #define CUDA_CHECK(call)                                                       \
@@ -505,18 +505,40 @@ void write_simulation_state(FILE *summary_fp, FILE *node_fp,
       int state_val = countdown_vector[idx];
 
       const char *state_str;
+      // if (state_val == SUSCEPTIBLE) {
+      //   susceptible++;
+      //   state_str = "susceptible";
+      // } else if (state_val > gMediumRange) {
+      //   incubating++;
+      //   state_str = "incubating";
+      // } else if (state_val > gLowerRange) {
+      //   infectious++;
+      //   state_str = "infectious";
+      // } else {
+      //   resistant++;
+      //   state_str = "resistant";
+      // }
+
+      int elapsed = (state_val <= 0 || state_val > gUpperRange)
+                ? 0 : (gUpperRange - state_val);
+
       if (state_val == SUSCEPTIBLE) {
-        susceptible++;
-        state_str = "susceptible";
-      } else if (state_val > gMediumRange) {
-        incubating++;
-        state_str = "incubating";
-      } else if (state_val > gLowerRange) {
-        infectious++;
-        state_str = "infectious";
+          susceptible++;
+          state_str = "susceptible";
+      } else if (gExposedDuration > 0 && elapsed < gExposedDuration) {
+          incubating++;
+          state_str = "incubating";
+      } else if (gInfectiousDuration > 0 &&
+                elapsed < gExposedDuration + gInfectiousDuration) {
+          infectious++;
+          state_str = "infectious";
+      } else if (gResistantDuration > 0 &&
+                elapsed < gExposedDuration + gInfectiousDuration + gResistantDuration) {
+          resistant++;
+          state_str = "resistant";
       } else {
-        resistant++;
-        state_str = "resistant";
+          susceptible++;
+          state_str = "susceptible";
       }
 
       if (node_fp) {
@@ -577,8 +599,9 @@ int main(int argc, char **argv) {
     fprintf(
         stderr,
         "  --start-time <epoch>         Unix start time of the simulation.\n");
-    fprintf(stderr, "  --time-step <seconds>        Duration of each "
-                    "simulation step in seconds.\n");
+    fprintf(stderr, "  --static-network-duration <seconds>  Duration (seconds) of each static contact network window.\n");
+    fprintf(stderr, "  [deprecated] --time-step <seconds>   Alias for --static-network-duration.\n");
+
 
     return 1;
   }
@@ -639,10 +662,11 @@ int main(int argc, char **argv) {
       gResistantDuration = atoi(argv[++i]);
     } else if (strcmp(argv[i], "--start-time") == 0 && (i + 1 < argc)) {
       gGlobalStartTime = (int64_t)atoll(argv[++i]);
-    } else if (strcmp(argv[i], "--time-step") == 0 && (i + 1 < argc)) {
-      gTimeStep = (int64_t)atoll(argv[++i]);
+    } else if ((strcmp(argv[i], "--static-network-duration") == 0 ||
+          strcmp(argv[i], "--time-step") == 0) && (i + 1 < argc)) {
+      // Accept both --static-network-duration and legacy --time-step
+      gStaticNetworkDuration = (int64_t)atoll(argv[++i]);
     }
-
     else {
       fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
       return 1;
@@ -785,8 +809,14 @@ int main(int argc, char **argv) {
   printf("\n"); // for formatting
   printf("Starting temporal Monte Carlo simulation for %d iterations...\n",
          gIterations);
-  printf("[INFO] Simulation start time: %lld, time step: %lld seconds\n",
-         (long long)gGlobalStartTime, (long long)gTimeStep);
+  printf("[INFO] Simulation start time: %lld, time step: %.3f seconds, static network window: %lld seconds\n",
+         (long long)gGlobalStartTime, (double)gStepSize,
+         (long long)gStaticNetworkDuration);
+
+  if (gStaticNetworkDuration <= 0) {
+    fprintf(stderr, "Error: static network duration must be positive.\n");
+    return 1;
+  }
 
   // Basic GPU thread config for kernels (used if not CPU-only)
   int threads = 256;
@@ -794,25 +824,53 @@ int main(int argc, char **argv) {
 
   /* 4) Main iteration loop */
   for (int iter = 0; iter < gIterations; iter++) {
-    int64_t offset = (int64_t)iter * gTimeStep;
-    if ((gTimeStep > 0 && iter > 0 && offset < 0) ||
-        (gTimeStep < 0 && iter > 0 && offset > 0)) {
-      fprintf(stderr, "Error: Overflow detected when computing offset.\n");
+    double raw_offset = (double)iter * (double)gStepSize;
+    if (raw_offset > (double)INT64_MAX || raw_offset < (double)INT64_MIN) {
+      fprintf(stderr,
+              "Error: Overflow detected when computing time offset.\n");
       return 1;
     }
 
-    int64_t current_start_ts = gGlobalStartTime + offset;
-    if ((gTimeStep > 0 && current_start_ts > INT64_MAX - gTimeStep) ||
-        (gTimeStep < 0 && current_start_ts < INT64_MIN - gTimeStep)) {
+    int64_t offset = (int64_t)llround(raw_offset);
+
+    if ((offset > 0 && gGlobalStartTime > INT64_MAX - offset) ||
+        (offset < 0 && gGlobalStartTime < INT64_MIN - offset)) {
+      fprintf(stderr,
+              "Error: Overflow detected when computing current simulation time.\n");
+      return 1;
+    }
+
+    int64_t current_time_ts = gGlobalStartTime + offset;
+
+    // Align network lookup to the static slice that contains the current
+    // simulation time so several iterations can reuse the same contact window.
+    int64_t network_offset = (offset / gStaticNetworkDuration) * gStaticNetworkDuration;
+    if (offset < 0 && (offset % gStaticNetworkDuration)) {
+      network_offset -= gStaticNetworkDuration;
+    }
+
+    if ((network_offset > 0 && gGlobalStartTime > INT64_MAX - network_offset) ||
+        (network_offset < 0 && gGlobalStartTime < INT64_MIN - network_offset)) {
+      fprintf(stderr,
+              "Error: Overflow detected when computing network window start.\n");
+      return 1;
+    }
+
+    int64_t current_start_ts = gGlobalStartTime + network_offset;
+    if ((gStaticNetworkDuration > 0 &&
+         current_start_ts > INT64_MAX - gStaticNetworkDuration) ||
+        (gStaticNetworkDuration < 0 &&
+         current_start_ts < INT64_MIN - gStaticNetworkDuration)) {
       fprintf(stderr,
               "Error: Overflow detected when computing current_end_ts.\n");
       return 1;
     }
 
-    int64_t current_end_ts = current_start_ts + gTimeStep;
+    int64_t current_end_ts = current_start_ts + gStaticNetworkDuration;
 
-    printf("\n--- Iteration %d: time window [%lld, %lld) ---\n", iter + 1,
-           (long long)current_start_ts, (long long)current_end_ts);
+    printf("\n--- Iteration %d (sim time %lld): time window [%lld, %lld) ---\n",
+           iter + 1, (long long)current_time_ts, (long long)current_start_ts,
+           (long long)current_end_ts);
 
     /*
      * Allocate buffer for overlapping intervals ("hits").
@@ -941,9 +999,8 @@ int main(int argc, char **argv) {
       print_status_counts(h_countdown_vector, num_nodes, gM, 5);
 
       if (summary_fp || node_fp) { // if file output flags set
-        int64_t current_time = gGlobalStartTime + (int64_t)iter * gTimeStep;
         write_simulation_state(summary_fp, node_fp, h_countdown_vector,
-                               num_nodes, gM, current_time);
+                               num_nodes, gM, current_time_ts);
       }
 
       /* 4.7) Cleanup adjacency from GPU */
@@ -985,9 +1042,8 @@ int main(int argc, char **argv) {
       print_status_counts(h_countdown_vector, num_nodes, gM, 5);
 
       if (summary_fp || node_fp) {
-        int64_t current_time = gGlobalStartTime + (int64_t)iter * gTimeStep;
         write_simulation_state(summary_fp, node_fp, h_countdown_vector,
-                               num_nodes, gM, current_time);
+                               num_nodes, gM, current_time_ts);
       }
 
       // CPU adjacency arrays can just be freed
