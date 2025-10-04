@@ -17,10 +17,61 @@ typedef struct {
   UT_hash_handle hh;
 } EdgeAggEntry;
 
-#define MAX_LINE_LEN 100000 // 100 KB for long NODE_LIST lines
+#define MAX_LINE_LEN 100000 // Max size for non-header lines
 #define DEBUG_PRINT_COUNT 5 // Number of edges to print for verification
 
+#ifdef _WIN32
+typedef long ssize_t;
+#endif
+
 static int gTotalNodes = -1; // <-- parsed from NODE_LIST= line
+
+// -----------------------------------------------------------------------------
+// Utility: portable getline() replacement
+// -----------------------------------------------------------------------------
+
+ssize_t portable_getline(char **lineptr, size_t *n, FILE *stream) {
+    if (!lineptr || !n || !stream) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (*lineptr == NULL || *n == 0) {
+        *n = 128;
+        *lineptr = (char *)malloc(*n);
+        if (*lineptr == NULL) {
+            return -1;
+        }
+    }
+
+    size_t i = 0;
+    int c = 0;
+
+    while ((c = fgetc(stream)) != EOF) {
+        // grow buffer if needed
+        if (i + 1 >= *n) {
+            size_t new_size = *n * 2;
+            char *new_ptr = realloc(*lineptr, new_size);
+            if (!new_ptr) {
+                return -1;
+            }
+            *lineptr = new_ptr;
+            *n = new_size;
+        }
+
+        (*lineptr)[i++] = (char)c;
+        if (c == '\n') {
+            break;
+        }
+    }
+
+    if (i == 0 && c == EOF) {
+        return -1; // EOF with no data read
+    }
+
+    (*lineptr)[i] = '\0';
+    return (ssize_t)i;
+}
 
 // -----------------------------------------------------------------------------
 // Utility: pack/unpack node pairs into a 64-bit value
@@ -102,28 +153,38 @@ IntervalMap *parse_edgelist_build_intervals(const char *filename,
     return NULL;
   }
 
-  char header[MAX_LINE_LEN];
-  if (!fgets(header, sizeof(header), fp_check)) {
-    fprintf(stderr, "[FATAL] Unable to read first line from file\n");
-    fclose(fp_check);
-    return NULL;
+  char *header = NULL;
+  size_t header_bufsize = 0;
+  ssize_t header_len = portable_getline(&header, &header_bufsize, fp_check);
+  if (header_len <= 0) {
+      fprintf(stderr, "[FATAL] Unable to read first line from file\n");
+      free(header);
+      fclose(fp_check);
+      return NULL;
   }
+
+  // printf("[DEBUG] Full header line:\n'%s'\n", header);
+  printf("[DEBUG] Header string length: %zu\n", strlen(header));
 
   if (strncmp(header, "NODE_LIST", 9) != 0 ||
       (header[9] != ' ' && header[9] != '\t')) {
     fprintf(stderr,
             "[FATAL] First line must begin with 'NODE_LIST', got: '%s'\n",
             header);
+    free(header);
     fclose(fp_check);
     return NULL;
   }
 
   // Tokenize after "NODE_LIST"
   char *token = strtok(header + 9, " \t\r\n");
+  printf("[TRACE] Parsed token: '%s'\n", token);
   int node_id_count = 0;
-  int *node_ids = (int *)malloc(10000000 * sizeof(int)); // assume <10M nodes
+  size_t node_capacity = 1024;
+  int *node_ids = (int *)malloc(node_capacity * sizeof(int));
   if (!node_ids) {
     fprintf(stderr, "[FATAL] Memory allocation failed for node ID array\n");
+    free(header);
     fclose(fp_check);
     return NULL;
   }
@@ -136,6 +197,7 @@ IntervalMap *parse_edgelist_build_intervals(const char *filename,
     if (errno != 0 || *endptr != '\0' || id < 0) {
       fprintf(stderr, "[FATAL] Invalid node ID in NODE_LIST: '%s'\n", token);
       free(node_ids);
+      free(header);
       fclose(fp_check);
       return NULL;
     }
@@ -146,9 +208,23 @@ IntervalMap *parse_edgelist_build_intervals(const char *filename,
         fprintf(stderr,
                 "[FATAL] Duplicate node ID detected in NODE_LIST: %ld\n", id);
         free(node_ids);
+        free(header);
         fclose(fp_check);
         return NULL;
       }
+    }
+
+    if (node_id_count >= node_capacity) {
+        node_capacity *= 2;
+        int *new_ids = realloc(node_ids, node_capacity * sizeof(int));
+        if (!new_ids) {
+            fprintf(stderr, "[FATAL] realloc failed for node ID array\n");
+            free(node_ids);
+            free(header);
+            fclose(fp_check);
+            return NULL;
+        }
+        node_ids = new_ids;
     }
 
     node_ids[node_id_count++] = (int)id;
@@ -158,11 +234,13 @@ IntervalMap *parse_edgelist_build_intervals(const char *filename,
   if (node_id_count <= 0) {
     fprintf(stderr, "[FATAL] No valid node IDs found in NODE_LIST.\n");
     free(node_ids);
+    free(header);
     fclose(fp_check);
     return NULL;
   }
 
   gTotalNodes = node_id_count;
+  free(header);
   printf("[DEBUG] NODE_LIST parsed: gTotalNodes = %d\n", gTotalNodes);
   free(node_ids);
 
@@ -265,15 +343,6 @@ int get_or_create_node_index(const char *node_id_str) {
 
     if (!item->node_id) {
       fprintf(stderr, "[FATAL] strdup failed for node ID: %s\n", node_id_str);
-      exit(EXIT_FAILURE);
-    }
-
-    int current_index = HASH_COUNT(node_map);
-    if (gTotalNodes > 0 && current_index >= gTotalNodes) {
-      fprintf(stderr,
-              "[FATAL] More unique nodes encountered than specified in "
-              "NODE_LIST=%d\n",
-              gTotalNodes);
       exit(EXIT_FAILURE);
     }
 
