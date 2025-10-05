@@ -226,12 +226,13 @@ static int cmp_edgelist(const void *a, const void *b) {
  *   - 'hits' is the list of intervals that overlap [start_ts, end_ts).
  *   - 'n_hits' is how many we have.
  *   - If we treat them as *undirected*, we add both (src, tgt) and (tgt, src).
- *   - 'row' = src, 'col' = tgt, weight = overlap_duration.
+ *   - 'row' = src, 'col' = tgt, weight = overlap_duration * weight_scale.
  */
 static void build_csr_from_intervals(IntervalMap *hits, int n_hits, int n_nodes,
                                      int **csrRowPtr, int **csrColInd,
                                      float **csrVal, size_t *p_nnz,
-                                     int64_t start_ts, int64_t end_ts) {
+                                     int64_t start_ts, int64_t end_ts,
+                                     float weight_scale) {
 
   // --- Early exit if no intervals (avoid malloc(0) / invalid deref) ---
   if (n_hits <= 0) {
@@ -270,7 +271,7 @@ static void build_csr_from_intervals(IntervalMap *hits, int n_hits, int n_nodes,
     int64_t overlap_start = (s > start_ts) ? s : start_ts;
     int64_t overlap_end = (e < end_ts) ? e : end_ts;
     if (overlap_end > overlap_start) {
-      float overlap_duration = (float)(overlap_end - overlap_start);
+      float overlap_duration = (float)(overlap_end - overlap_start) * weight_scale;
 
       edgelist[ecount].row = src_idx;
       edgelist[ecount].col = tgt_idx;
@@ -817,10 +818,18 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Error: static network duration must be positive.\n");
     return 1;
   }
+  if (gStepSize <= 0.0f) {
+    fprintf(stderr, "Error: step size must be positive.\n");
+    return 1;
+  }
 
   // Basic GPU thread config for kernels (used if not CPU-only)
   int threads = 256;
   int blocks = (int)((totalSize + threads - 1) / threads);
+
+  bool slice_cache_valid = false;
+  int64_t cached_slice_start_ts = 0;
+  int cached_slice_steps = 1;
 
   /* 4) Main iteration loop */
   for (int iter = 0; iter < gIterations; iter++) {
@@ -868,6 +877,63 @@ int main(int argc, char **argv) {
 
     int64_t current_end_ts = current_start_ts + gStaticNetworkDuration;
 
+    if (!slice_cache_valid || current_start_ts != cached_slice_start_ts) {
+      int steps_in_slice = 0;
+      for (int future_iter = iter; future_iter < gIterations; ++future_iter) {
+        double future_raw_offset = (double)future_iter * (double)gStepSize;
+        if (future_raw_offset > (double)INT64_MAX ||
+            future_raw_offset < (double)INT64_MIN) {
+          fprintf(stderr,
+                  "Error: Overflow detected when computing future time offset.\n");
+          return 1;
+        }
+
+        int64_t future_offset = (int64_t)llround(future_raw_offset);
+
+        if ((future_offset > 0 && gGlobalStartTime > INT64_MAX - future_offset) ||
+            (future_offset < 0 &&
+             gGlobalStartTime < INT64_MIN - future_offset)) {
+          fprintf(stderr,
+                  "Error: Overflow detected when computing future simulation time.\n");
+          return 1;
+        }
+
+        int64_t future_network_offset =
+            (future_offset / gStaticNetworkDuration) * gStaticNetworkDuration;
+        if (future_offset < 0 && (future_offset % gStaticNetworkDuration)) {
+          future_network_offset -= gStaticNetworkDuration;
+        }
+
+        if ((future_network_offset > 0 &&
+             gGlobalStartTime > INT64_MAX - future_network_offset) ||
+            (future_network_offset < 0 &&
+             gGlobalStartTime < INT64_MIN - future_network_offset)) {
+          fprintf(stderr,
+                  "Error: Overflow detected when computing future network start.\n");
+          return 1;
+        }
+
+        int64_t future_start_ts = gGlobalStartTime + future_network_offset;
+        if (future_start_ts != current_start_ts) {
+          break;
+        }
+
+        steps_in_slice++;
+      }
+
+      if (steps_in_slice <= 0) {
+        fprintf(stderr,
+                "Error: Failed to determine number of steps using current network slice.\n");
+        return 1;
+      }
+
+      cached_slice_start_ts = current_start_ts;
+      cached_slice_steps = steps_in_slice;
+      slice_cache_valid = true;
+    }
+
+    float weight_scale = 1.0f / (float)cached_slice_steps;
+
     printf("\n--- Iteration %d (sim time %lld): time window [%lld, %lld) ---\n",
            iter + 1, (long long)current_time_ts, (long long)current_start_ts,
            (long long)current_end_ts);
@@ -908,7 +974,7 @@ int main(int argc, char **argv) {
 
     build_csr_from_intervals(hits, n_return, num_nodes, &h_csrRowPtr,
                              &h_csrColInd, &h_csrVal, &nnz_count,
-                             current_start_ts, current_end_ts);
+                             current_start_ts, current_end_ts, weight_scale);
 
     free(hits);
 
