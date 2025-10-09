@@ -1,0 +1,14 @@
+# Define five nodes
+ADDNODE 1
+ADDNODE 2
+ADDNODE 3
+ADDNODE 4
+ADDNODE 5
+
+# Create a complete-triad contact that starts at UNIX=0, lasts 60s,
+# recurs every 120s, with exactly 2 occurrences (k = 0, 1)
+ADDEDGE [1,2,3] 0 60 120 OCCURRENCES 2
+
+# Create a pair contact between 4 and 5 that starts at UNIX=60, lasts 45s,
+# recurs every 30s until 1970-01-01T00:03:00Z (start times t_k < until)
+ADDEDGE [4,5] 60 45 30 UNTIL 1970-01-01T00:03:00Z
