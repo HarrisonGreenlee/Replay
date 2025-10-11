@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 from gooey import Gooey, GooeyParser
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import sys
+import math
 
 # Fix blurry text on high-DPI displays (Windows only)
 if sys.platform == "win32":
@@ -37,9 +38,12 @@ def main():
 
     files_group.add_argument("--summary-out", widget="FileSaver", help="CSV output file with SEIR counts for each simulation step")
 
+    files_group.add_argument("--node-state-out", widget="FileSaver", help="CSV output file with full node-state tracking")
+
     files_group.add_argument("--visualize", action="store_true", help="Visualize SEIR output")
 
-    files_group.add_argument("--node-state-out", widget="FileSaver", help="CSV output file with full node-state tracking")
+    files_group.add_argument("--disable-debug-prints", action="store_true",
+                             help="Debug prints track SEIR state but sometimes cause lag")
 
     sim_group = parser.add_argument_group("Simulation Configuration", gooey_options={'columns': 2})
 
@@ -73,14 +77,31 @@ def main():
     sim_group.add_argument("--start-date", widget="DateChooser",
                            default="2000-01-01", help="Simulation start date (UTC)")
     sim_group.add_argument("--start-time", default="00:00:00", help="Simulation start time (HH:MM:SS, UTC)")
-    sim_group.add_argument("--time-step", type=int, default=3600, help="Iteration timestep (seconds)")
+    sim_group.add_argument("--static-network-duration", type=int, default=3600, help="Static network window size (seconds)")
 
     args = parser.parse_args()
+
+    # Validate that static-network-duration is evenly divisible by step-size
+    # Prevent simulation start if the requirement is not met.
+    step = float(args.step_size)
+    if step == 0.0:
+        print("[ERROR] step-size must be non-zero.")
+        return
+    # Validate window size is positive and non-zero
+    window = int(args.static_network_duration)
+    if window <= 0:
+        print("[ERROR] static-network-duration must be positive and non-zero.")
+        return
+    ratio = args.static_network_duration / step
+    if not math.isclose(ratio, round(ratio), rel_tol=0.0, abs_tol=1e-9):
+        print("[ERROR] static-network-duration must be evenly divisible by step-size.")
+        print(f"Given static-network-duration={args.static_network_duration}, step-size={args.step_size}")
+        return
 
     start_str = f"{args.start_date}T{args.start_time}"
     try:
         datetime.strptime(args.start_time, "%H:%M:%S")
-        start_dt = datetime.fromisoformat(start_str)
+        start_dt = datetime.fromisoformat(start_str).replace(tzinfo=timezone.utc)
         start_ts = int(start_dt.timestamp())
     except ValueError:
         print(f"[ERROR] Invalid datetime format: {start_str}. Use YYYY-MM-DD and HH:MM:SS.")
@@ -103,13 +124,15 @@ def main():
         "--infectious-duration", str(args.infectious_duration),
         "--resistant-duration", str(args.resistant_duration),
         "--start-time", str(start_ts),
-        "--time-step", str(args.time_step),
+        "--static-network-duration", str(args.static_network_duration),
     ]
 
     if args.summary_out:
         cmd += ["--summary-out", args.summary_out]
     if args.node_state_out:
         cmd += ["--node-state-out", args.node_state_out]
+    if args.disable_debug_prints:
+        cmd += ["--disable-debug-prints"]
 
     print("Executing simulation with command:")
     print(" ".join(cmd))

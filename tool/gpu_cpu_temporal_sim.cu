@@ -30,6 +30,12 @@ static int gEigenThreads = -1;    // parallel threads for Eigen, default to max
 FILE *summary_fp = NULL;
 FILE *node_fp = NULL;
 
+// Debug/verbosity control (default: debug prints enabled)
+static bool gDisableDebugPrints = false;
+
+// Macro to guard debug printf calls
+#define DPRINTF(...) do { if (!gDisableDebugPrints) printf(__VA_ARGS__); } while (0)
+
 // Disease-state boundaries
 #define SUSCEPTIBLE 0
 // static int   gUpperRange             = 7200;
@@ -174,6 +180,7 @@ __global__ void update_countdown_vector(int *countdown_vector, int n, int m,
  * ----------------------------------------------------------------------------*/
 void print_status_counts(const int *h_countdown_vector, int n, int m,
                          int rowsToPrint) {
+  if (gDisableDebugPrints) return;
   for (int i = 0; i < rowsToPrint; i++) {
     int incubating = 0, infectious = 0, resistant = 0, susceptible = 0;
     for (int j = 0; j < n; j++) {
@@ -189,8 +196,8 @@ void print_status_counts(const int *h_countdown_vector, int n, int m,
       else if (status > gMediumRange)
         incubating++;
     }
-    printf("Row %d: Exposed=%d, Infectious=%d, Resistant=%d, Susceptible=%d\n",
-           i, incubating, infectious, resistant, susceptible);
+    DPRINTF("Row %d: Exposed=%d, Infectious=%d, Resistant=%d, Susceptible=%d\n",
+            i, incubating, infectious, resistant, susceptible);
   }
 }
 
@@ -610,6 +617,19 @@ int main(int argc, char **argv) {
   const char *filename = NULL;
   bool cpu_only = false;
 
+  // Recognize debug suppression flag early and redirect stdout
+  for (int i = 1; i < argc; ++i) {
+    if (strcmp(argv[i], "--disable-debug-prints") == 0 || strcmp(argv[i], "-q") == 0) {
+      gDisableDebugPrints = true;
+#ifdef _WIN32
+      freopen("NUL", "w", stdout);
+#else
+      freopen("/dev/null", "w", stdout);
+#endif
+      break;
+    }
+  }
+
   // Simple argument parsing:
   for (int i = 1; i < argc; i++) {
     if (argv[i][0] != '-') {
@@ -618,6 +638,10 @@ int main(int argc, char **argv) {
     }
     if (strcmp(argv[i], "--cpu-only") == 0) {
       cpu_only = true;
+    } else if ((strcmp(argv[i], "--disable-debug-prints") == 0) ||
+               (strcmp(argv[i], "-q") == 0)) {
+      // already acted on above; keep for recognition
+      gDisableDebugPrints = true;
     } else if (strcmp(argv[i], "--cpu-threads") == 0 && (i + 1 < argc)) {
       gEigenThreads = atoi(argv[++i]);
     } else if (strcmp(argv[i], "--M") == 0 && (i + 1 < argc)) {
@@ -775,7 +799,7 @@ int main(int argc, char **argv) {
     CUDA_CHECK(cudaDeviceSynchronize());
     // Copy to host for the initial debug
     CUDA_CHECK(cudaMemcpy(h_countdown_vector, d_countdown_vector,
-                          totalSize * sizeof(int), cudaMemcpyDeviceToHost));
+                            totalSize * sizeof(int), cudaMemcpyDeviceToHost));
   }
 
   // Create cuSPARSE handle (only if not CPU-only)
@@ -1061,8 +1085,10 @@ int main(int argc, char **argv) {
 
       // For debug printing
       CUDA_CHECK(cudaMemcpy(h_countdown_vector, d_countdown_vector,
-                            totalSize * sizeof(int), cudaMemcpyDeviceToHost));
-      print_status_counts(h_countdown_vector, num_nodes, gM, 5);
+                              totalSize * sizeof(int), cudaMemcpyDeviceToHost));
+      if (!gDisableDebugPrints) {
+        print_status_counts(h_countdown_vector, num_nodes, gM, 5);
+      }
 
       if (summary_fp || node_fp) { // if file output flags set
         write_simulation_state(summary_fp, node_fp, h_countdown_vector,
@@ -1104,8 +1130,10 @@ int main(int argc, char **argv) {
       // 4.6e: update_countdown_vector
       CPUUpdateCountdownVector(h_countdown_vector, num_nodes, gM, gStepSize);
 
-      // Debug print first 5 "rows"
-      print_status_counts(h_countdown_vector, num_nodes, gM, 5);
+      // Debug print first 5 "rows" (guarded)
+      if (!gDisableDebugPrints) {
+        print_status_counts(h_countdown_vector, num_nodes, gM, 5);
+      }
 
       if (summary_fp || node_fp) {
         write_simulation_state(summary_fp, node_fp, h_countdown_vector,
