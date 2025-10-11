@@ -68,6 +68,10 @@ def read_num_edges_from_file(filename):
                 return int(line.strip().split()[1])
     raise ValueError("NUM_EDGES line not found in the file.")
 
+def read_num_lines_from_file(filename):
+    num_lines = sum(1 for _ in open(filename))
+    return num_lines
+
 def deterministic_seed(*args):
     s = "_".join(map(str, args))
     return int(hashlib.sha256(s.encode()).hexdigest(), 16) % (10**8)
@@ -114,7 +118,8 @@ def main():
                     continue
 
                 try:
-                    num_edges = read_num_edges_from_file(graph_file)
+                    # num_edges = read_num_edges_from_file(graph_file)
+                    num_edges = read_num_lines_from_file(graph_file) - 1 # subtract 1 for header file
                     print(f"[INFO] Read {num_edges:,} edges from file.")
                 except Exception as e:
                     print(f"[ERROR] Could not read number of edges: {e}")
@@ -129,7 +134,7 @@ def main():
                         continue
 
                     sim_cmd = (
-                        f"gpu_cpu_temporal_sim {graph_file} "
+                        f"replay {graph_file} "
                         f"{ctype_args} "
                         f"--step-size {SIM_STEP_SIZE} "
                         f"--iterations {SIM_ITERATIONS} "

@@ -1,0 +1,36 @@
+    {
+    "Population": {
+        "node_file": "/mnt/c/Users/green/Desktop/Research/Replay/rollernet_example/epihiper_export/nodes.csv",
+        "traits_file": null,
+        "N": 518
+    },
+    "ContactNetwork": {
+        "type": "intervals",
+        "file": "/mnt/c/Users/green/Desktop/Research/Replay/rollernet_example/epihiper_export/contacts_intervals.csv",
+        "time_unit": "s"
+    },
+    "DiseaseModel": {
+        "compartments": ["S", "E", "I", "R"],
+        "initial_conditions": {
+        "I": 1,
+        "E": 0,
+        "R": 0
+        },
+        "rates": {
+        "beta": 0.0005,
+        "sigma": 0.3333,
+        "gamma": 0.2
+        }
+    },
+    "Simulation": {
+        "t0": 1156083900,
+        "tmax": 1156084200,
+        "time_step": 30,
+        "random_seed": 42
+    },
+    "Output": {
+        "state_transitions": "stateTransitions.csv",
+        "aggregate_counts": "output.csv",
+        "log_level": "INFO"
+    }
+    }

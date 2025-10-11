@@ -39,23 +39,39 @@ def plot_summary(summary_file):
     max_scaled_time = max_time / scale_factor
 
     # ---- Setup plot ----
-    plt.figure(figsize=(12, 6))
-    state_colors = {
+    plt.figure(figsize=(10, 5))
+
+    # ---- Colors, labels, and fixed legend order ----
+    STATE_COLORS = {
+        'susceptible': 'blue',
         'exposed': 'orange',
         'infectious': 'red',
         'resistant': 'green',
-        'susceptible': 'blue'
     }
+    # Desired legend/display order (capitalized as requested)
+    DISPLAY_ORDER = ['susceptible', 'exposed', 'infectious', 'resistant']
+    LABELS = {
+        'susceptible': 'Susceptible',
+        'exposed': 'Exposed',
+        'infectious': 'Infectious',
+        'resistant': 'Resistant',
+    }
+
+    # Only include states present in the CSV, but keep the requested order
+    available_states = [s for s in DISPLAY_ORDER if s in df.columns]
+    if not available_states:
+        print("No recognized state columns found in the CSV.")
+        return
 
     sim_ids = df['simulation_id'].unique()
     for sim_id in sim_ids:
         sim_df = df[df['simulation_id'] == sim_id]
-        for state in state_colors:
+        for state in available_states:
             plt.plot(
                 sim_df['scaled_time'],
                 sim_df[state],
-                label=state if sim_id == sim_ids[0] else None,
-                color=state_colors[state],
+                label=LABELS[state] if sim_id == sim_ids[0] else None,  # capitalized legend labels
+                color=STATE_COLORS[state],
                 alpha=0.1
             )
 
@@ -67,8 +83,18 @@ def plot_summary(summary_file):
     plt.xlabel(f"Time ({chosen_unit})")
     plt.ylabel("Number of individuals")
     plt.title("Disease State Over Time Across Simulations")
-    plt.ylim(0, df[['exposed', 'infectious', 'resistant', 'susceptible']].values.max() * 1.05)
-    plt.legend()
+    plt.ylim(0, df[available_states].values.max() * 1.05)
+    
+    leg = plt.legend(title="States", labelcolor='black',
+                 facecolor='white', framealpha=1, edgecolor='0.2')
+
+    # Make the little lines in the legend fully opaque & a bit thicker
+    for h in leg.legend_handles:
+        if hasattr(h, "set_alpha"):
+            h.set_alpha(1)          # override your plot alpha (e.g., 0.1) just for legend
+        if hasattr(h, "set_linewidth"):
+            h.set_linewidth(2.2)    # thicker legend swatch
+
     plt.grid(True)
     plt.tight_layout()
     plt.show()

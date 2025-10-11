@@ -48,6 +48,12 @@ def read_num_edges_from_file(filename):
                 return int(line.strip().split()[1])
     raise ValueError("NUM_EDGES line not found in the file.")
 
+def read_num_lines_from_file(filename):
+    num_lines = sum(1 for _ in open(filename))
+    return num_lines
+
+
+
 def generate_network(population, network_seed, graph_file):
     num_groups = max(1, int(GROUP_MULTIPLIER * population))
 
@@ -70,7 +76,8 @@ def run_benchmarks():
     generate_network(POPULATION, network_seed, graph_file)
 
     try:
-        total_edges = read_num_edges_from_file(graph_file)
+        # total_edges = read_num_edges_from_file(graph_file)
+        total_edges = read_num_lines_from_file(graph_file) - 1 # subtract 1 for header file
         print(f"[INFO] Read {total_edges:,} edges from file.")
     except Exception as e:
         print(f"[ERROR] Could not read number of edges: {e}")
