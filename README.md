@@ -63,7 +63,7 @@ Make sure the following are installed and available in your system `PATH`:
 2. **Install dependencies with manifest mode**
 
     ```bat
-    external\vcpkg\vcpkg install
+    sudo external/vcpkg/vcpkg install --x-manifest-root=tool
     ```
 
 3. **Create the build directory and configure with CMake**
