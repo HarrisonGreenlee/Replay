@@ -53,7 +53,7 @@ Make sure the following are installed and available in your system `PATH`:
 
 1. **Clone the repository and vcpkg submodule**  
    ```bat
-   git clone https://github.com/your-username/replay.git
+   git clone https://github.com/HarrisonGreenlee/replay.git
    cd replay
    git clone https://github.com/microsoft/vcpkg.git external/vcpkg
    cd external/vcpkg
